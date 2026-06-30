@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Raspi IoT Monitor</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <header>
+    <h1>🌡️ Raspi IoT Monitor</h1>
+    <div class="header-right">
+      <span id="device-label" class="badge">esp32</span>
+      <span id="ws-status" class="badge badge-disconnected">● 切断中</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Latest values -->
+    <section class="cards">
+      <div class="card card-temp">
+        <div class="card-icon">🌡️</div>
+        <div class="card-body">
+          <div class="card-value" id="temp-value">--.-</div>
+          <div class="card-unit">°C</div>
+        </div>
+        <div class="card-label">温度</div>
+      </div>
+      <div class="card card-humi">
+        <div class="card-icon">💧</div>
+        <div class="card-body">
+          <div class="card-value" id="humi-value">--.-</div>
+          <div class="card-unit">%</div>
+        </div>
+        <div class="card-label">湿度</div>
+      </div>
+      <div class="card card-time">
+        <div class="card-icon">🕐</div>
+        <div class="card-body">
+          <div class="card-value card-value-sm" id="last-updated">---</div>
+        </div>
+        <div class="card-label">最終更新</div>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="stats-section">
+      <div class="stats-header">
+        <h2>統計</h2>
+        <select id="period-select">
+          <option value="30">直近 30 分</option>
+          <option value="60" selected>直近 1 時間</option>
+          <option value="360">直近 6 時間</option>
+          <option value="1440">直近 24 時間</option>
+        </select>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-label">温度 min</div>
+          <div class="stat-value" id="stat-temp-min">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">温度 avg</div>
+          <div class="stat-value" id="stat-temp-avg">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">温度 max</div>
+          <div class="stat-value" id="stat-temp-max">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">湿度 min</div>
+          <div class="stat-value" id="stat-humi-min">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">湿度 avg</div>
+          <div class="stat-value" id="stat-humi-avg">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">湿度 max</div>
+          <div class="stat-value" id="stat-humi-max">--</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Charts -->
+    <section class="charts">
+      <div class="chart-card">
+        <h2>温度 (°C)</h2>
+        <canvas id="chart-temp"></canvas>
+      </div>
+      <div class="chart-card">
+        <h2>湿度 (%)</h2>
+        <canvas id="chart-humi"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
