@@ -1,20 +1,78 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+JST = timezone(timedelta(hours=9))
+
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import SensorReading, get_db
-from schemas import SensorReadingOut
-import serial_reader as sr
+from schemas import SensorReadingIn, SensorReadingOut, DeviceInfo
 
 router = APIRouter(prefix="/api/sensors", tags=["sensors"])
 
 
+# ── Ingest ────────────────────────────────────────────────────────────────────
+
+@router.post("/reading", response_model=SensorReadingOut, status_code=201)
+async def post_reading(
+    payload: SensorReadingIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Receive a sensor reading from an ESP32 device over WiFi.
+
+    ESP32 should POST JSON:
+        {"device_id": "living-room", "temperature": 25.3, "humidity": 60.5}
+    """
+    reading = SensorReading(
+        device_id=payload.device_id,
+        temperature=payload.temperature,
+        humidity=payload.humidity,
+        timestamp=datetime.now(tz=JST),
+    )
+    db.add(reading)
+    await db.commit()
+    await db.refresh(reading)
+
+    # Broadcast to WebSocket clients
+    from main import get_manager
+    manager = get_manager()
+    await manager.broadcast({
+        "id": reading.id,
+        "device_id": reading.device_id,
+        "temperature": reading.temperature,
+        "humidity": reading.humidity,
+        "timestamp": reading.timestamp.isoformat(),
+    })
+
+    return reading
+
+
+# ── Query ─────────────────────────────────────────────────────────────────────
+
+@router.get("/devices", response_model=list[DeviceInfo])
+async def get_devices(db: AsyncSession = Depends(get_db)):
+    """List all registered devices with last seen time and reading count."""
+    result = await db.execute(
+        select(
+            SensorReading.device_id,
+            func.max(SensorReading.timestamp).label("last_seen"),
+            func.count(SensorReading.id).label("reading_count"),
+        ).group_by(SensorReading.device_id)
+        .order_by(func.max(SensorReading.timestamp).desc())
+    )
+    return [
+        DeviceInfo(device_id=row.device_id, last_seen=row.last_seen, reading_count=row.reading_count)
+        for row in result.all()
+    ]
+
+
 @router.get("/latest", response_model=Optional[SensorReadingOut])
 async def get_latest(
-    device_id: str = Query("esp32"),
+    device_id: str = Query(..., description="Device name, e.g. 'living-room'"),
     db: AsyncSession = Depends(get_db),
 ):
     """Return the most recent reading for a device."""
@@ -29,12 +87,12 @@ async def get_latest(
 
 @router.get("/history", response_model=list[SensorReadingOut])
 async def get_history(
-    device_id: str = Query("esp32"),
+    device_id: str = Query(..., description="Device name"),
     minutes: int = Query(60, ge=1, le=1440),
     db: AsyncSession = Depends(get_db),
 ):
     """Return readings within the last N minutes (default 60, max 1440)."""
-    since = datetime.utcnow() - timedelta(minutes=minutes)
+    since = datetime.now(tz=JST) - timedelta(minutes=minutes)
     result = await db.execute(
         select(SensorReading)
         .where(
@@ -48,12 +106,12 @@ async def get_history(
 
 @router.get("/stats")
 async def get_stats(
-    device_id: str = Query("esp32"),
+    device_id: str = Query(..., description="Device name"),
     minutes: int = Query(60, ge=1, le=1440),
     db: AsyncSession = Depends(get_db),
 ):
     """Return min/max/avg for temperature and humidity over the last N minutes."""
-    since = datetime.utcnow() - timedelta(minutes=minutes)
+    since = datetime.now(tz=JST) - timedelta(minutes=minutes)
     result = await db.execute(
         select(
             func.min(SensorReading.temperature).label("temp_min"),
@@ -83,23 +141,4 @@ async def get_stats(
             "avg": round(row.humi_avg, 2) if row.humi_avg else None,
         },
         "count": row.count,
-    }
-
-
-@router.get("/devices")
-async def get_devices(db: AsyncSession = Depends(get_db)):
-    """List all known device IDs."""
-    result = await db.execute(
-        select(SensorReading.device_id).distinct()
-    )
-    return [row[0] for row in result.all()]
-
-
-@router.get("/status")
-async def get_status():
-    """Return serial reader status and latest in-memory reading."""
-    return {
-        "latest": sr.latest_reading,
-        "serial_port": sr.SERIAL_PORT or "auto-detect",
-        "baud_rate": sr.BAUD_RATE,
     }
