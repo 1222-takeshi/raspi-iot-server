@@ -11,7 +11,9 @@ ESP32 devices connect via WiFi and POST sensor data to:
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+JST = timezone(timedelta(hours=9))
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -101,7 +103,7 @@ async def websocket_endpoint(ws: WebSocket):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok", "timestamp": datetime.now(tz=JST).isoformat()}
 
 
 # Expose manager so routes can broadcast new readings

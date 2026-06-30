@@ -1,5 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+JST = timezone(timedelta(hours=9))
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select, func
@@ -29,6 +31,7 @@ async def post_reading(
         device_id=payload.device_id,
         temperature=payload.temperature,
         humidity=payload.humidity,
+        timestamp=datetime.now(tz=JST),
     )
     db.add(reading)
     await db.commit()
@@ -89,7 +92,7 @@ async def get_history(
     db: AsyncSession = Depends(get_db),
 ):
     """Return readings within the last N minutes (default 60, max 1440)."""
-    since = datetime.utcnow() - timedelta(minutes=minutes)
+    since = datetime.now(tz=JST) - timedelta(minutes=minutes)
     result = await db.execute(
         select(SensorReading)
         .where(
@@ -108,7 +111,7 @@ async def get_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Return min/max/avg for temperature and humidity over the last N minutes."""
-    since = datetime.utcnow() - timedelta(minutes=minutes)
+    since = datetime.now(tz=JST) - timedelta(minutes=minutes)
     result = await db.execute(
         select(
             func.min(SensorReading.temperature).label("temp_min"),
