@@ -3,9 +3,11 @@ FastAPI application entry point.
 
 Start with:
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+ESP32 devices connect via WiFi and POST sensor data to:
+    POST /api/sensors/reading
 """
 
-import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -18,7 +20,6 @@ from fastapi.responses import FileResponse
 
 from database import init_db
 from routes.sensors import router as sensors_router
-import serial_reader as sr
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,35 +59,19 @@ manager = ConnectionManager()
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
-async def _serial_loop():
-    """Restart serial reader task on failure."""
-    while True:
-        try:
-            await sr.serial_reader_task(broadcast_fn=manager.broadcast)
-        except Exception as exc:
-            logger.error("Serial reader crashed: %s — restarting in 10 s", exc)
-        await asyncio.sleep(10)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
-    task = asyncio.create_task(_serial_loop())
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="Raspi IoT Server",
-    description="ESP32 sensor monitoring server",
-    version="0.1.0",
+    description="ESP32 WiFi sensor monitoring server",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -107,12 +92,8 @@ async def root():
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await manager.connect(ws)
-    # Send latest reading immediately on connect
-    if sr.latest_reading:
-        await ws.send_text(json.dumps(sr.latest_reading, default=str))
     try:
         while True:
-            # Keep connection alive; client can send pings
             await ws.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(ws)
@@ -121,3 +102,8 @@ async def websocket_endpoint(ws: WebSocket):
 @app.get("/health")
 async def health():
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+
+# Expose manager so routes can broadcast new readings
+def get_manager() -> ConnectionManager:
+    return manager

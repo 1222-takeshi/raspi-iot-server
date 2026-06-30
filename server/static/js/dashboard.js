@@ -1,5 +1,5 @@
 /* ── Config ── */
-const MAX_POINTS = 60; // keep last 60 data points in charts
+const MAX_POINTS = 60;
 const WS_URL = `ws://${location.host}/ws`;
 const API_BASE = "/api/sensors";
 
@@ -53,6 +53,10 @@ function timeLabel(ts) {
   return d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function selectedDevice() {
+  return $("device-select").value;
+}
+
 /* ── Update UI with a reading ── */
 function applyReading(r) {
   $("temp-value").textContent = fmt(r.temperature);
@@ -72,20 +76,52 @@ function pushPoint(chart, label, value) {
   chart.update("none");
 }
 
+function clearCharts() {
+  for (const chart of [tempChart, humiChart]) {
+    chart.data.labels = [];
+    chart.data.datasets[0].data = [];
+    chart.update("none");
+  }
+}
+
+/* ── Load device list ── */
+async function loadDevices() {
+  try {
+    const res = await fetch(`${API_BASE}/devices`);
+    const devices = await res.json();
+    const select = $("device-select");
+    const current = select.value;
+
+    select.innerHTML = '<option value="">デバイスを選択...</option>';
+    for (const d of devices) {
+      const opt = document.createElement("option");
+      opt.value = d.device_id;
+      opt.textContent = d.device_id;
+      select.appendChild(opt);
+    }
+
+    // Restore selection or pick first device
+    if (current && devices.find((d) => d.device_id === current)) {
+      select.value = current;
+    } else if (devices.length > 0) {
+      select.value = devices[0].device_id;
+    }
+    return select.value;
+  } catch (e) {
+    console.error("loadDevices failed:", e);
+    return "";
+  }
+}
+
 /* ── Load history from API ── */
 async function loadHistory(minutes) {
-  const device = $("device-label").textContent;
+  const device = selectedDevice();
+  if (!device) return;
   try {
-    const res = await fetch(`${API_BASE}/history?device_id=${device}&minutes=${minutes}`);
+    const res = await fetch(`${API_BASE}/history?device_id=${encodeURIComponent(device)}&minutes=${minutes}`);
     const rows = await res.json();
 
-    // Reset charts
-    tempChart.data.labels = [];
-    tempChart.data.datasets[0].data = [];
-    humiChart.data.labels = [];
-    humiChart.data.datasets[0].data = [];
-
-    // Take last MAX_POINTS entries
+    clearCharts();
     const slice = rows.slice(-MAX_POINTS);
     for (const r of slice) {
       const lbl = timeLabel(r.timestamp);
@@ -105,9 +141,10 @@ async function loadHistory(minutes) {
 
 /* ── Load stats from API ── */
 async function loadStats(minutes) {
-  const device = $("device-label").textContent;
+  const device = selectedDevice();
+  if (!device) return;
   try {
-    const res = await fetch(`${API_BASE}/stats?device_id=${device}&minutes=${minutes}`);
+    const res = await fetch(`${API_BASE}/stats?device_id=${encodeURIComponent(device)}&minutes=${minutes}`);
     const s = await res.json();
     $("stat-temp-min").textContent = fmt(s.temperature.min) + " °C";
     $("stat-temp-avg").textContent = fmt(s.temperature.avg) + " °C";
@@ -136,11 +173,25 @@ function connectWS() {
 
   ws.onmessage = (ev) => {
     const r = JSON.parse(ev.data);
+    // Update device list if a new device appears
+    const select = $("device-select");
+    const exists = [...select.options].some((o) => o.value === r.device_id);
+    if (!exists) {
+      const opt = document.createElement("option");
+      opt.value = r.device_id;
+      opt.textContent = r.device_id;
+      select.appendChild(opt);
+      // Auto-select if no device is selected
+      if (!select.value) select.value = r.device_id;
+    }
+
+    // Only update charts for the currently selected device
+    if (r.device_id !== selectedDevice()) return;
+
     const lbl = timeLabel(r.timestamp);
     applyReading(r);
     pushPoint(tempChart, lbl, r.temperature);
     pushPoint(humiChart, lbl, r.humidity);
-    // Refresh stats silently
     loadStats(Number($("period-select").value));
   };
 
@@ -153,15 +204,26 @@ function connectWS() {
   };
 }
 
-/* ── Period select ── */
+/* ── Event listeners ── */
+$("device-select").addEventListener("change", () => {
+  clearCharts();
+  const m = Number($("period-select").value);
+  loadHistory(m);
+  loadStats(m);
+});
+
 $("period-select").addEventListener("change", (e) => {
   const m = Number(e.target.value);
   loadHistory(m);
   loadStats(m);
 });
 
+// Refresh device list every 30 s (picks up newly connected ESP32s)
+setInterval(loadDevices, 30_000);
+
 /* ── Init ── */
 (async () => {
+  await loadDevices();
   const minutes = Number($("period-select").value);
   await loadHistory(minutes);
   await loadStats(minutes);
