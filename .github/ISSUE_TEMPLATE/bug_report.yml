@@ -1,0 +1,35 @@
+name: Bug Report
+description: 不具合の報告
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 不具合の内容
+      description: 何が起きているか
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動作
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 環境
+      placeholder: |
+        - OS: Raspberry Pi OS / Ubuntu
+        - Python: 3.x
+        - デバイス: ESP32 (CH340)
